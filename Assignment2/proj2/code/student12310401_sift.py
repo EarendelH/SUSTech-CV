@@ -122,7 +122,7 @@ def get_features(image, x, y, feature_width, scales=None):
         if norm > 0:
             hist = hist / norm
         
-        threshold = 0.2
+        threshold = 0.3
         hist[hist > threshold] = threshold
         
         norm = np.linalg.norm(hist)

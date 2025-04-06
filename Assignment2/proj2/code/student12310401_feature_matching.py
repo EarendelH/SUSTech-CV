@@ -47,13 +47,17 @@ def match_features(features1, features2, x1, y1, x2, y2):
                         best_match = sorted_indices[0]
                         second_best_match = sorted_indices[1]
                         
-                        ratio = distances[best_match] / distances[second_best_match]
-                        if ratio < 0.8:  
+                        if distances[best_match] < 0.9 * distances[second_best_match]:
                                 matches.append([i, best_match])
-                                confidences.append(1 - ratio)
+                                confidences.append(distances[second_best_match]/distances[best_match])
 
         matches = np.array(matches)
         confidences = np.array(confidences)
+
+        idxs = np.flipud(confidences.argsort()) 
+        matches = matches[idxs]
+        confidences = confidences[idxs]
+
         #############################################################################
 
         # raise NotImplementedError('`match_features` function in ' +

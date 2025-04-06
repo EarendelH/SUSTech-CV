@@ -99,7 +99,9 @@ def show_interest_points(img, X, Y):
             colored circles at keypoints plotted on top of it
     """
     newImg = img.copy()
-    for x, y in zip(X.astype(int), Y.astype(int)):
+    for x, y in zip(X.astype(np.int32), Y.astype(np.int32)):
+        x = int(x)
+        y = int(y)
         cur_color = np.random.rand(3)
         newImg = cv2.circle(newImg, (x, y), 10, cur_color, -1, cv2.LINE_AA)
 

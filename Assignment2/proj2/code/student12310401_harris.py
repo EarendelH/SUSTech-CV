@@ -70,7 +70,6 @@ def get_interest_points(image, feature_width):
         R_max = np.max(R)
         threshold = 0.01 * R_max
         
-
         local_max = np.zeros_like(R, dtype=bool)
         for i in range(1, R.shape[0] - 1):
             for j in range(1, R.shape[1] - 1):
@@ -80,17 +79,13 @@ def get_interest_points(image, feature_width):
         
         
         y, x = np.where(local_max)
-        
-        
+
         if len(x) == 0:
             return np.array([]), np.array([]), confidences, scales, orientations
             
-        
         scores = R[y, x]
         
-        
         max_fetch_point = 1500
-        
         corners_coords = np.column_stack((x, y, scores))
         
         sorted_indices = np.argsort(-corners_coords[:, 2])
