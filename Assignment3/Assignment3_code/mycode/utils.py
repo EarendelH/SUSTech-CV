@@ -65,7 +65,7 @@ def get_image_paths(data_path, categories, num_train_per_cat=100, fmt='jpg'):
 
 
 def show_results(train_image_paths, test_image_paths, train_labels, test_labels,
-                 categories, abbr_categories, predicted_categories):
+                 categories, abbr_categories, predicted_categories,figname='ConfusionMatrix.png'):
     """
     shows the results
     :param train_image_paths:
@@ -83,7 +83,7 @@ def show_results(train_image_paths, test_image_paths, train_labels, test_labels,
     y_true = [cat2idx[cat] for cat in test_labels]
     y_pred = [cat2idx[cat] for cat in predicted_categories]
     cm = confusion_matrix(y_true, y_pred)
-    cm = cm.astype(np.float) / cm.sum(axis=1)[:, np.newaxis]
+    cm = cm.astype(np.float32) / cm.sum(axis=1)[:, np.newaxis]
     acc = np.mean(np.diag(cm))
     plt.figure()
     plt.imshow(cm, interpolation='nearest', cmap=plt.cm.get_cmap('jet'))
@@ -92,3 +92,6 @@ def show_results(train_image_paths, test_image_paths, train_labels, test_labels,
     plt.tight_layout()
     plt.xticks(tick_marks, abbr_categories, rotation=45)
     plt.yticks(tick_marks, categories)
+    plt.savefig(figname)
+    # plt.show()
+    # plt.close()
