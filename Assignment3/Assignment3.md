@@ -39,10 +39,10 @@ vocab size = 200
 
 |K| Tiny Image + Nearest Neighbor | Bag of SIFT + Nearest Neighbor |
 |:--:|:--:|:--:|
-|1|22.93%|0.415|
+|1|22.93%|50.93%|
 |3|24.00%|65.07%|
-|5|23.60%|0.415|
-|7|22.27%|0.415|
+|5|23.60%|52.67%|
+|7|22.27%|53.20%|
 
 ## Fast SIFT Experiment
 
