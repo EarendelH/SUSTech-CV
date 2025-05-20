@@ -1,298 +1,299 @@
 import cv2
 import numpy as np
 import pickle
-from utils import load_image, load_image_gray 
+from utils import load_image, load_image_gray
 import cyvlfeat as vlfeat
 import sklearn.metrics.pairwise as sklearn_pairwise
 from sklearn.svm import LinearSVC
-from scipy.stats import mode 
+from IPython.core.debugger import set_trace
+from PIL import Image
+import scipy.spatial.distance as distance
+from cyvlfeat.sift.dsift import dsift
+from cyvlfeat.kmeans import kmeans
 from time import time
-from collections import Counter
+
 
 def get_tiny_images(image_paths):
     """
-    Builds tiny image features. Resizes images to 16x16, and normalizes them
-    to have zero mean and unit standard deviation.
-    """
-    print("Getting tiny images...")
-    feats = []
-    target_size = (16, 16)
+    This feature is inspired by the simple tiny images used as features in
+    80 million tiny images: a large dataset for non-parametric object and
+    scene recognition. A. Torralba, R. Fergus, W. T. Freeman. IEEE
+    Transactions on Pattern Analysis and Machine Intelligence, vol.30(11),
+    pp. 1958-1970, 2008. http://groups.csail.mit.edu/vision/TinyImages/
 
-    for i, path in enumerate(image_paths):
-        # if (i + 1) % 100 == 0:
-        #     print(f" Processing tiny image {i+1}/{len(image_paths)}")
-        img = load_image_gray(path)
-        tiny_img = cv2.resize(img, target_size, interpolation=cv2.INTER_LINEAR)
-        
-        flat_img = tiny_img.flatten()
-        mean = np.mean(flat_img)
-        std = np.std(flat_img)
-        
-        if std > 1e-6:
-            normalized_flat_img = (flat_img - mean) / std
-        else:
-            normalized_flat_img = flat_img - mean
-        
-        feats.append(normalized_flat_img)
+    To build a tiny image feature, simply resize the original image to a very
+    small square resolution, e.g. 16x16. You can either resize the images to
+    square while ignoring their aspect ratio or you can crop the center
+    square portion out of each image. Making the tiny images zero mean and
+    unit length (normalizing them) will increase performance modestly.
 
-    return np.array(feats, dtype=np.float32)
-
-
-def build_vocabulary(image_paths, vocab_size, sift_step_size=10, sift_fast_mode=True):
-    """
-    Samples SIFT descriptors from training images and clusters them using k-means
-    to create a visual word vocabulary.
+    Useful functions:
+    -   cv2.resize
+    -   use load_image(path) to load a RGB images and load_image_gray(path) to
+        load grayscale images
 
     Args:
-    -   image_paths: List of image paths for training.
-    -   vocab_size: The desired number of visual words (clusters).
-    -   sift_step_size: Step size for dense SIFT.
-    -   sift_fast_mode: Whether to use the fast DSIFT approximation.
+    -   image_paths: list of N elements containing image paths
 
     Returns:
-    -   vocab: A vocab_size x 128 numpy array of cluster centers (visual words).
+    -   feats: N x d numpy array of resized and then vectorized tiny images
+              e.g. if the images are resized to 16x16, d would be 256
     """
-    print(f"Building vocabulary of size {vocab_size} (SIFT step: {sift_step_size}, fast: {sift_fast_mode})...")
-    all_descriptors = []
-    
-    start_time = time()
-    for i, path in enumerate(image_paths):
-        # if (i + 1) % 100 == 0:
-        #     print(f" Processing image {i+1}/{len(image_paths)} for SIFT (vocab build)...")
-        
-        img = load_image_gray(path)
-        img_single = img.astype(np.float32)
+    # dummy feats variable
+    feats = []
 
-        frames, descriptors = vlfeat.sift.dsift(img_single, 
-                                                step=sift_step_size, 
-                                                fast=sift_fast_mode)
-        
-        if descriptors is not None and descriptors.shape[0] > 0:
-            all_descriptors.append(descriptors)
+    #############################################################################
+    # TODO: YOUR CODE HERE                                                      #
+    #############################################################################
 
-    if not all_descriptors:
-        print("CRITICAL WARNING: No SIFT descriptors found. Vocabulary will be empty or zeros.")
-        sift_dim = 128
-        return np.zeros((vocab_size, sift_dim), dtype=np.float32)
+    raise NotImplementedError('`get_tiny_images` function in ' +
+                              '`student_code.py` needs to be implemented')
 
-    all_descriptors_np = np.vstack(all_descriptors).astype(np.float32)
-    print(f"Total SIFT descriptors sampled: {all_descriptors_np.shape[0]}")
+    #############################################################################
+    #                             END OF YOUR CODE                              #
+    #############################################################################
 
-    actual_k = vocab_size
-    if all_descriptors_np.shape[0] < vocab_size:
-        print(f"Warning: Number of SIFT descriptors ({all_descriptors_np.shape[0]}) is less than "
-              f"requested vocab_size ({vocab_size}). Using {all_descriptors_np.shape[0]} clusters instead.")
-        actual_k = all_descriptors_np.shape[0]
-    
-    if actual_k == 0:
-        print("CRITICAL WARNING: No descriptors to cluster. Returning zero vocabulary.")
-        sift_dim = 128
-        return np.zeros((vocab_size, sift_dim), dtype=np.float32)
-
-    print(f"Clustering {all_descriptors_np.shape[0]} descriptors into {actual_k} clusters...")
-    vocab = vlfeat.kmeans.kmeans(all_descriptors_np, 
-                                 actual_k,
-                                 initialization="PLUSPLUS",
-                                 algorithm="LLOYD",
-                                 max_num_iterations=100)
-    end_time = time()
-    print(f"Vocabulary building took {end_time - start_time:.2f} seconds. Vocab shape: {vocab.shape}")
-    return vocab.astype(np.float32)
+    return feats
 
 
-def get_bags_of_sifts(image_paths, vocab_filename, sift_step_size=5, sift_fast_mode=True):
+def build_vocabulary(image_paths, vocab_size):
     """
-    Converts images into Bag of SIFT feature representations using a precomputed vocabulary.
+    This function will sample SIFT descriptors from the training images,
+    cluster them with kmeans, and then return the cluster centers.
+
+    Useful functions:
+    -   Use load_image(path) to load RGB images and load_image_gray(path) to load
+            grayscale images
+    -   frames, descriptors = vlfeat.sift.dsift(img)
+          http://www.vlfeat.org/matlab/vl_dsift.html
+            -  frames is a N x 2 matrix of locations, which can be thrown away
+            here (but possibly used for extra credit in get_bags_of_sifts if
+            you're making a "spatial pyramid").
+            -  descriptors is a N x 128 matrix of SIFT features
+          Note: there are step, bin size, and smoothing parameters you can
+          manipulate for dsift(). We recommend debugging with the 'fast'
+          parameter. This approximate version of SIFT is about 20 times faster to
+          compute. Also, be sure not to use the default value of step size. It
+          will be very slow and you'll see relatively little performance gain
+          from extremely dense sampling. You are welcome to use your own SIFT
+          feature code! It will probably be slower, though.
+    -   cluster_centers = vlfeat.kmeans.kmeans(X, K)
+            http://www.vlfeat.org/matlab/vl_kmeans.html
+              -  X is a N x d numpy array of sampled SIFT features, where N is
+                 the number of features sampled. N should be pretty large!
+              -  K is the number of clusters desired (vocab_size)
+                 cluster_centers is a K x d matrix of cluster centers. This is
+                 your vocabulary.
 
     Args:
-    -   image_paths: List of image paths.
-    -   vocab_filename: Path to the pickled vocabulary file.
-    -   sift_step_size: Step size for dense SIFT.
-    -   sift_fast_mode: Whether to use the fast DSIFT approximation.
+    -   image_paths: list of image paths.
+    -   vocab_size: size of vocabulary
 
     Returns:
-    -   image_feats: An N x vocab_size numpy array of BoS features.
+    -   vocab: This is a vocab_size x d numpy array (vocabulary). Each row is a
+        cluster center / visual word
     """
-    print(f"Loading vocabulary from {vocab_filename}...")
-    try:
-        with open(vocab_filename, 'rb') as f:
-            vocab = pickle.load(f)
-    except FileNotFoundError:
-        print(f"CRITICAL ERROR: Vocab file '{vocab_filename}' not found.")
-        return np.array([])
-    except Exception as e:
-        print(f"CRITICAL ERROR: Failed to load vocab '{vocab_filename}': {e}")
-        return np.array([])
+    # Load images from the training set. To save computation time, you don't
+    # necessarily need to sample from all images, although it would be better
+    # to do so. You can randomly sample the descriptors from each image to save
+    # memory and speed up the clustering. Or you can simply call vl_dsift with
+    # a large step size here, but a smaller step size in get_bags_of_sifts.
+    #
+    # For each loaded image, get some SIFT features. You don't have to get as
+    # many SIFT features as you will in get_bags_of_sift, because you're only
+    # trying to get a representative sample here.
+    #
+    # Once you have tens of thousands of SIFT features from many training
+    # images, cluster them with kmeans. The resulting centroids are now your
+    # visual word vocabulary.
 
-    if not isinstance(vocab, np.ndarray) or vocab.ndim != 2 or (vocab.shape[0] > 0 and vocab.shape[1] != 128):
-        print(f"CRITICAL ERROR: Loaded vocabulary is invalid. Shape: {vocab.shape if isinstance(vocab, np.ndarray) else 'Not an ndarray'}")
-        return np.array([])
-    
-    vocab = vocab.astype(np.float32)
-    vocab_size = vocab.shape[0]
+    # length of the SIFT descriptors that you are going to compute.
+    dim = 128
+    vocab = np.zeros((vocab_size, dim))
 
-    if vocab_size == 0:
-        print("CRITICAL WARNING: Vocab is empty. Returning N x 0 BoS features.")
-        return np.zeros((len(image_paths), 0), dtype=np.float32)
+    #############################################################################
+    # TODO: YOUR CODE HERE                                                      #
+    #############################################################################
 
-    print(f"Getting Bags of SIFTs (SIFT step: {sift_step_size}, fast: {sift_fast_mode}, vocab size: {vocab_size})...")
+    raise NotImplementedError('`build_vocabulary` function in ' +
+                              '`student_code.py` needs to be implemented') 
+
+    #############################################################################
+    #                             END OF YOUR CODE                              #
+    #############################################################################
+
+    return vocab
+
+
+def get_bags_of_sifts(image_paths, vocab_filename):
+    """
+    This feature representation is described in the handout, lecture
+    materials, and Szeliski chapter 14.
+    You will want to construct SIFT features here in the same way you
+    did in build_vocabulary() (except for possibly changing the sampling
+    rate) and then assign each local feature to its nearest cluster center
+    and build a histogram indicating how many times each cluster was used.
+    Don't forget to normalize the histogram, or else a larger image with more
+    SIFT features will look very different from a smaller version of the same
+    image.
+
+    Useful functions:
+    -   Use load_image(path) to load RGB images and load_image_gray(path) to load
+            grayscale images
+    -   frames, descriptors = vlfeat.sift.dsift(img)
+            http://www.vlfeat.org/matlab/vl_dsift.html
+          frames is a M x 2 matrix of locations, which can be thrown away here
+            (but possibly used for extra credit in get_bags_of_sifts if you're
+            making a "spatial pyramid").
+          descriptors is a M x 128 matrix of SIFT features
+            note: there are step, bin size, and smoothing parameters you can
+            manipulate for dsift(). We recommend debugging with the 'fast'
+            parameter. This approximate version of SIFT is about 20 times faster
+            to compute. Also, be sure not to use the default value of step size.
+            It will be very slow and you'll see relatively little performance
+            gain from extremely dense sampling. You are welcome to use your own
+            SIFT feature code! It will probably be slower, though.
+    -   assignments = vlfeat.kmeans.kmeans_quantize(data, vocab)
+            finds the cluster assigments for features in data
+              -  data is a M x d matrix of image features
+              -  vocab is the vocab_size x d matrix of cluster centers
+              (vocabulary)
+              -  assignments is a Mx1 array of assignments of feature vectors to
+              nearest cluster centers, each element is an integer in
+              [0, vocab_size)
+
+    Args:
+    -   image_paths: paths to N images
+    -   vocab_filename: Path to the precomputed vocabulary.
+            This function assumes that vocab_filename exists and contains an
+            vocab_size x 128 ndarray 'vocab' where each row is a kmeans centroid
+            or visual word. This ndarray is saved to disk rather than passed in
+            as a parameter to avoid recomputing the vocabulary every run.
+
+    Returns:
+    -   image_feats: N x d matrix, where d is the dimensionality of the
+            feature representation. In this case, d will equal the number of
+            clusters or equivalently the number of entries in each image's
+            histogram (vocab_size) below.
+    """
+    # load vocabulary
+    with open(vocab_filename, 'rb') as f:
+        vocab = pickle.load(f)
+
+    # dummy features variable
     feats = []
+
+    #############################################################################
+    # TODO: YOUR CODE HERE                                                      #
+    #############################################################################
+
+    raise NotImplementedError('`get_bags_of_sifts` function in ' +
+                              '`student_code.py` needs to be implemented')
     
-    start_time = time()
-    for i, path in enumerate(image_paths):
-        # if (i + 1) % 100 == 0:
-        #     print(f" Processing image {i+1}/{len(image_paths)} for BoS features...")
 
-        img = load_image_gray(path)
-        img_single = img.astype(np.float32)
+    #############################################################################
+    #                             END OF YOUR CODE                              #
+    #############################################################################
 
-        frames, descriptors = vlfeat.sift.dsift(img_single, 
-                                                step=sift_step_size, 
-                                                fast=sift_fast_mode)
-        
-        histogram = np.zeros(vocab_size, dtype=np.float32)
-
-        if descriptors is not None and descriptors.shape[0] > 0:
-            descriptors_single = descriptors.astype(np.float32)
-            try:
-                assignments = vlfeat.kmeans.kmeans_quantize(descriptors_single, vocab)
-                hist_counts, _ = np.histogram(assignments, bins=np.arange(vocab_size + 1))
-                histogram = hist_counts.astype(np.float32)
-                hist_sum = np.sum(histogram)
-                if hist_sum > 1e-9:
-                    histogram = histogram / hist_sum
-            except Exception as e:
-                print(f"  Warning: Error during SIFT quantization for {path}: {e}. Using zero histogram.")
-        feats.append(histogram)
-    
-    feats_np = np.array(feats, dtype=np.float32)
-    end_time = time()
-    print(f"BoS feature extraction took {end_time - start_time:.2f} seconds. Features shape: {feats_np.shape}")
-    return feats_np
+    return feats
 
 
 def nearest_neighbor_classify(train_image_feats, train_labels, test_image_feats,
-                              metric='euclidean', k=1): # Added k parameter
+                              metric='euclidean'):
     """
-    Predicts categories for test images using k-Nearest Neighbors.
+    This function will predict the category for every test image by finding
+    the training image with most similar features. Instead of 1 nearest
+    neighbor, you can vote based on k nearest neighbors which will increase
+    performance (although you need to pick a reasonable value for k).
+
+    Useful functions:
+    -   D = sklearn_pairwise.pairwise_distances(X, Y)
+          computes the distance matrix D between all pairs of rows in X and Y.
+            -  X is a N x d numpy array of d-dimensional features arranged along
+            N rows
+            -  Y is a M x d numpy array of d-dimensional features arranged along
+            N rows
+            -  D is a N x M numpy array where d(i, j) is the distance between row
+            i of X and row j of Y
 
     Args:
-    -   train_image_feats: N x d array of training features.
-    -   train_labels: List of N training labels.
-    -   test_image_feats: M x d array of testing features.
-    -   metric: Distance metric for sklearn.metrics.pairwise_distances.
-    -   k: Number of nearest neighbors to use.
+    -   train_image_feats:  N x d numpy array, where d is the dimensionality of
+            the feature representation
+    -   train_labels: N element list, where each entry is a string indicating
+            the ground truth category for each training image
+    -   test_image_feats: M x d numpy array, where d is the dimensionality of the
+            feature representation. You can assume N = M, unless you have changed
+            the starter code
+    -   metric: (optional) metric to be used for nearest neighbor.
+            Can be used to select different distance functions. The default
+            metric, 'euclidean' is fine for tiny images. 'chi2' tends to work
+            well for histograms
 
     Returns:
-    -   predicted_labels: List of M predicted labels for test images.
+    -   test_labels: M element list, where each entry is a string indicating the
+            predicted category for each testing image
     """
-    print(f"Classifying using {k}-Nearest Neighbor(s) with metric: {metric}...")
+    test_labels = []
+
+    #############################################################################
+    # TODO: YOUR CODE HERE                                                      #
+    #############################################################################
+
+    raise NotImplementedError('`nearest_neighbor_classify` function in ' +
+                              '`student_code.py` needs to be implemented')
     
-    if train_image_feats.shape[0] == 0:
-        print("Warning: Empty training features. Cannot classify.")
-        return ["Unknown"] * test_image_feats.shape[0]
-    if test_image_feats.shape[0] == 0:
-        print("Warning: Empty test features.")
-        return []
+    #############################################################################
+    #                             END OF YOUR CODE                              #
+    #############################################################################
 
-    train_labels_np = np.array(train_labels)
-    
-    actual_metric = metric
-    if metric.lower() == 'chi2':
-        print("Note: For 'chi2' metric with `pairwise_distances`, it often implies `chi2_kernel`. "
-              "If true chi-squared distance is needed, 'cosine' is a robust alternative for histograms, or implement chi2 distance separately.")
-        actual_metric = 'cosine' 
-
-    try:
-        distances = sklearn_pairwise.pairwise_distances(test_image_feats, train_image_feats, metric=actual_metric)
-    except ValueError as e:
-        print(f"Error computing distances with metric '{actual_metric}': {e}. Trying 'euclidean' as fallback.")
-        try:
-            distances = sklearn_pairwise.pairwise_distances(test_image_feats, train_image_feats, metric='euclidean')
-        except Exception as e_fallback:
-            print(f"Fallback to 'euclidean' also failed: {e_fallback}. Cannot classify.")
-            return ["Unknown"] * test_image_feats.shape[0]
-
-    if k == 1:
-        nearest_neighbor_indices = np.argmin(distances, axis=1)
-        predicted_labels = list(train_labels_np[nearest_neighbor_indices])
-    else:
-        if k <= 0:
-            print(f"Warning: k must be positive. Got {k}. Setting k=1.")
-            k = 1
-        if k > train_image_feats.shape[0]: 
-            print(f"Warning: k ({k}) > num training samples ({train_image_feats.shape[0]}). Setting k to num training samples.")
-            k = train_image_feats.shape[0]
-        
-        k_nearest_indices = np.argsort(distances, axis=1)[:, :k]
-        k_nearest_labels = train_labels_np[k_nearest_indices] # Shape: (num_test_samples, k)
-        
-        predicted_labels = []
-        for labels_row in k_nearest_labels:
-            if len(labels_row) > 0:
-                most_common_label = Counter(labels_row).most_common(1)[0][0]
-                predicted_labels.append(most_common_label)
-            else:
-                predicted_labels.append("Unknown") 
-
-    return predicted_labels
+    return test_labels
 
 
-def svm_classify(train_image_feats, train_labels, test_image_feats, C_value=7.0): # Added C_value parameter
+def svm_classify(train_image_feats, train_labels, test_image_feats):
     """
-    Trains 1-vs-all Linear SVMs and predicts categories for test images.
+    This function will train a linear SVM for every category (i.e. one vs all)
+    and then use the learned linear classifiers to predict the category of
+    every test image. Every test feature will be evaluated with all 15 SVMs
+    and the most confident SVM will "win". Confidence, or distance from the
+    margin, is W*X + B where '*' is the inner product or dot product and W and
+    B are the learned hyperplane parameters.
+
+    Useful functions:
+    -   sklearn LinearSVC
+          http://scikit-learn.org/stable/modules/generated/sklearn.svm.LinearSVC.html
+    -   svm.fit(X, y)
+    -   set(l)
 
     Args:
-    -   train_image_feats: N x d array of training features.
-    -   train_labels: List of N training labels.
-    -   test_image_feats: M x d array of testing features.
-    -   C_value: Regularization parameter C for LinearSVC.
-
+    -   train_image_feats:  N x d numpy array, where d is the dimensionality of
+            the feature representation
+    -   train_labels: N element list, where each entry is a string indicating the
+            ground truth category for each training image
+    -   test_image_feats: M x d numpy array, where d is the dimensionality of the
+            feature representation. You can assume N = M, unless you have changed
+            the starter code
     Returns:
-    -   predicted_labels: List of M predicted labels for test images.
+    -   test_labels: M element list, where each entry is a string indicating the
+            predicted category for each testing image
     """
-    print(f"Training and classifying with 1-vs-all Linear SVMs (C={C_value})...")
-    
-    if train_image_feats.shape[0] == 0:
-        print("Warning: Empty training features. Cannot train SVMs.")
-        return ["Unknown"] * test_image_feats.shape[0]
-    if test_image_feats.shape[0] == 0:
-        print("Warning: Empty test features.")
-        return []
+    # categories
+    categories = list(set(train_labels))
 
-    categories = sorted(list(set(train_labels)))
-    num_categories = len(categories)
+    # construct 1 vs all SVMs for each category
+    svms = {cat: LinearSVC(random_state=0, tol=1e-3, loss='hinge', C=5)
+            for cat in categories}
 
-    svm_params = {'random_state': 0, 'tol': 1e-3, 'loss': 'hinge', 'C': C_value, 'max_iter': 2000}
-    
-    svm_params['dual'] = True 
+    test_labels = []
 
-    trained_svms = {}
+    #############################################################################
+    # TODO: YOUR CODE HERE                                                      #
+    #############################################################################
 
-    print(f"Training {num_categories} 1-vs-all SVMs...")
-    for i, category in enumerate(categories):
-        binary_labels = np.array([1 if label == category else 0 for label in train_labels])
-        svm = LinearSVC(**svm_params)
-        try:
-            svm.fit(train_image_feats, binary_labels)
-            trained_svms[category] = svm
-        except Exception as e:
-            print(f"  Failed to train SVM for category '{category}': {e}.")
+    raise NotImplementedError('`svm_classify` function in ' +
+                              '`student_code.py` needs to be implemented')
 
-    num_test_images = test_image_feats.shape[0]
-    decision_scores = np.full((num_test_images, num_categories), -np.inf, dtype=np.float32)
+    #############################################################################
+    #                             END OF YOUR CODE                              #
+    #############################################################################
 
-    print("Predicting categories using trained SVMs...")
-    for i, category in enumerate(categories):
-        if category in trained_svms:
-            svm = trained_svms[category]
-            try:
-                scores_for_category = svm.decision_function(test_image_feats)
-                decision_scores[:, i] = scores_for_category
-            except Exception as e:
-                 print(f"  Failed to get decision scores for category '{category}': {e}.")
-    
-    predicted_indices = np.argmax(decision_scores, axis=1)
-    predicted_labels = [categories[idx] for idx in predicted_indices]
-    
-    return predicted_labels
+    return test_labels
